@@ -1,50 +1,22 @@
 #!/usr/bin/env python3
-"""
-Redis as a http request rate counter
-"""
-import requests
+""" Implementing an expiring web cache and tracker
+    obtain the HTML content of a particular URL and returns it """
 import redis
-import functools
-from typing import Callable
-
-redis_db = redis.Redis(host='127.0.0.1')
-
-
-def count_requests(method: Callable) -> Callable:
-    """
-    A decorator function for counting how many times a request is made
-    """
-    @functools.wraps(method)
-    def wrapper(*args, **kwargs):
-        """
-        count how many time a function is called and persis it in redis
-        """
-        url = args[0]
-        count_key = "count:" + url
-        cache_key = url
-        if redis_db.get(count_key) is None:
-            # redis_db.setex(count_key, 10, 1)
-            redis_db.set(count_key, 1)
-        else:
-            redis_db.incr(count_key)
-
-        if redis_db.get(cache_key):
-            return redis_db.get(cache_key).decode("utf-8")
-
-        result = method(*args, **kwargs)
-        redis_db.psetex(cache_key, 10000, result)
-        return result
-
-    return wrapper
+import requests
+r = redis.Redis()
+count = 0
 
 
-@count_requests
 def get_page(url: str) -> str:
-    """
-    make a get request and return the value
-    """
-    return requests.get(url).text
+    """ track how many times a particular URL was accessed in the key
+        "count:{url}"
+        and cache the result with an expiration time of 10 seconds """
+    r.set(f"cached:{url}", count)
+    resp = requests.get(url)
+    r.incr(f"count:{url}")
+    r.setex(f"cached:{url}", 10, r.get(f"cached:{url}"))
+    return resp.text
 
 
 if __name__ == "__main__":
-    print(get_page('http://slowwly.robertomurray.co.uk'))
+    get_page('http://slowwly.robertomurray.co.uk')
